@@ -1,0 +1,3 @@
+-- Archivo conservado por compatibilidad con referencias anteriores.
+-- La corrección del modelo normalizado actual está en actualizar_rpc_modelo_ot.sql.
+-- Debe revisarse y ejecutarse manualmente en Supabase SQL Editor.

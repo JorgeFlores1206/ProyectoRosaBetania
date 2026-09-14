@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>Sistema de Órdenes de Trabajo</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="icons.css">
+</head>
+<body>
+  <main class="container">
+    <section id="pantalla-login" class="login-shell" hidden>
+      <form id="login-form" class="login-card">
+        <div class="brand-mark">RB</div><h1>Sistema de Órdenes de Trabajo</h1><p>Rosa Betania SRL</p>
+        <label>Correo electrónico<input id="login-email" type="email" autocomplete="username" required></label>
+        <label>Contraseña<input id="login-password" type="password" autocomplete="current-password" required></label>
+        <button id="login-button" type="submit">Iniciar sesión</button><div id="login-mensaje" aria-live="polite"></div>
+      </form>
+    </section>
+    <section id="pantalla-sistema" hidden>
+      <header class="app-header"><div><h1>Sistema de Órdenes de Trabajo</h1><p>Rosa Betania SRL</p></div><div class="session-info"><span>Usuario: <strong id="perfil-nombre">—</strong></span><span>Rol: <strong id="perfil-rol">—</strong></span><span id="conexion">Conectando...</span></div></header>
+      <nav class="main-nav"><button type="button" data-section="nueva">Nueva OT</button><button type="button" data-section="ordenes" class="secondary">Órdenes</button><button id="nav-usuarios" type="button" data-section="usuarios" class="secondary" hidden>Usuarios</button><button id="cerrar-sesion" type="button" class="secondary nav-logout">Cerrar sesión</button></nav>
+      <div id="mensaje" aria-live="polite"></div>
+      <section id="seccion-nueva" class="app-section">
+        <form id="form">
+          <div id="modo" class="mode-banner"><strong>Modo Crear</strong><span>Nueva orden de trabajo · Estado inicial: Pendiente</span></div>
+          <section class="card"><h2>1. Datos principales</h2><div class="grid"><label>Cliente<select id="cod_cliente" required></select></label><label>Fecha OT<input id="fecha_ot" type="date" required></label><label>Cantidad<input id="cantidad" type="number" min="0" value="0" required></label><label>Tipo de trabajo<select id="cod_trabajo" required></select></label><label>Cantidad de páginas<input id="cantidad_paginas" type="number" min="0" value="0" required></label><label>Nombre del trabajo<input id="nombre_ot" required></label><div class="readonly-state"><span>Estado inicial</span><strong>Pendiente</strong></div><label>Tamaño final<input id="tamano_final" placeholder="Opcional"></label><label>Corte<input id="corte" placeholder="Opcional"></label></div></section>
+          <section class="card"><h2>2. Material</h2><div class="table-wrap"><table class="position-table"><thead><tr><th>Posición</th><th>Material</th><th>Tamaño material</th><th>Formato</th><th>Total hojas</th></tr></thead><tbody id="materiales"></tbody></table></div></section>
+          <section class="card"><h2>3. Colorimetría</h2><div class="table-wrap"><table class="position-table"><thead><tr><th>Posición</th><th>Colorimetría</th><th>Cara</th></tr></thead><tbody id="colorimetrias"></tbody></table></div></section>
+          <section class="card"><h2>4. Impresión</h2><div class="table-wrap"><table class="position-table"><thead><tr><th>Posición</th><th>Tipo de impresión</th></tr></thead><tbody id="impresiones"></tbody></table></div></section>
+          <section class="card"><h2>5. Máquina</h2><div class="table-wrap"><table class="position-table"><thead><tr><th>Posición</th><th>Máquina</th></tr></thead><tbody id="maquinas"></tbody></table></div></section>
+          <section class="card"><h2>6. Muestrario</h2><div class="table-wrap"><table class="position-table"><thead><tr><th>Posición</th><th>Muestra</th></tr></thead><tbody id="muestras"></tbody></table></div></section>
+          <section class="card"><h2>7. Acabados</h2><p class="help">Selecciona los acabados y define una cara independiente para cada uno.</p><div id="acabados" class="acabados-grid"></div></section>
+          <div class="form-actions"><button id="guardar" type="submit">Crear OT</button><button id="cancelar-edicion" class="secondary" type="button" hidden>Cancelar edición</button></div>
+        </form>
+      </section>
+      <section id="seccion-ordenes" class="app-section" hidden><div class="card"><div class="section-heading"><div><h2>Órdenes de Trabajo</h2><p class="help">Información actualizada desde Supabase.</p></div><button id="recargar" class="secondary" type="button">Recargar</button></div><div class="table-wrap"><table><thead><tr><th>Código</th><th>Fecha OT</th><th>Cliente</th><th>Nombre</th><th>Trabajo</th><th>Cantidad</th><th>Materiales</th><th>Máquinas</th><th>Acabados</th><th>Estado</th><th>Acciones</th></tr></thead><tbody id="lista"></tbody></table></div></div></section>
+      <section id="seccion-usuarios" class="app-section" hidden><div class="card"><div class="section-heading"><div><h2>Usuarios</h2><p class="help">Administración de roles existentes.</p></div><button id="recargar-usuarios" class="secondary" type="button">Recargar</button></div><div class="table-wrap"><table class="users-table"><thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Fecha de creación</th><th>Acciones</th></tr></thead><tbody id="lista-usuarios"></tbody></table></div></div></section>
+    </section>
+    <section id="pantalla-cargando" class="loading-screen">Comprobando sesión...</section>
+    <dialog id="modal"><div class="modal-head"><h2 id="modal-titulo"></h2><button id="cerrar-modal" class="icon-button" type="button" aria-label="Cerrar">×</button></div><div id="modal-contenido"></div></dialog>
+  </main>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
