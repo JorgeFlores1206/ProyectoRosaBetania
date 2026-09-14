@@ -68,7 +68,67 @@ function cambiarEstado(codOt) { const actual = ordenes.find(x => Number(x.cod_ot
 function confirmarEliminar(codOt) { $("#modal-titulo").textContent = `Eliminar Orden de Trabajo #${codOt}`; $("#modal-contenido").innerHTML = `<p>¿Seguro que deseas eliminar la Orden de Trabajo #${codOt}?</p><p>Esta acción eliminará la OT y sus registros relacionados.</p><div class="modal-actions"><button class="secondary" data-modal-action="cancelar">Cancelar</button><button class="danger" data-modal-action="confirmar-eliminar" data-id="${codOt}">Eliminar definitivamente</button></div>`; modal.showModal(); }
 
 async function listarUsuarios() { if (!esAdministrador()) throw new Error("Tu usuario no tiene permiso para realizar esta acción."); const body = $("#lista-usuarios"); body.innerHTML = '<tr><td colspan="5">Cargando...</td></tr>'; const data = await rpc("seguridad_usuarios_listar"); const usuarios = Array.isArray(data) ? data : data ? [data] : []; body.innerHTML = usuarios.map(u => `<tr><td>${escapar(u.nombre)}</td><td>${escapar(u.correo ?? u.email)}</td><td>${escapar(u.rol)}</td><td>${fechaHora(u.fecha_creacion)}</td><td><div class="action-group"><select class="rol-select" aria-label="Nuevo rol"><option value="Usuario" ${u.rol === "Usuario" ? "selected" : ""}>Usuario</option><option value="Administrador" ${u.rol === "Administrador" ? "selected" : ""}>Administrador</option></select><button class="small" data-cod-perfil="${escapar(u.cod_perfil)}" data-current-role="${escapar(u.rol)}">Cambiar rol</button></div></td></tr>`).join("") || '<tr><td colspan="5">No hay usuarios para mostrar.</td></tr>'; }
-async function iniciarSistema() { if (autenticando) return; autenticando = true; try { const data = await rpc("seguridad_mi_perfil"); perfil = Array.isArray(data) ? data[0] : data; if (!perfil?.rol || !["Administrador","Usuario"].includes(perfil.rol)) throw new Error("No fue posible obtener un perfil válido."); $("#perfil-nombre").textContent = perfil.nombre || "Sin nombre"; $("#perfil-rol").textContent = perfil.rol; $("#nav-usuarios").hidden = !esAdministrador(); $("#pantalla-login").hidden = true; $("#pantalla-cargando").hidden = true; $("#pantalla-sistema").hidden = false; if (!sistemaCargado) { await cargarCatalogos(); sistemaCargado = true; } await listarOrdenes(); mostrarSeccion("ordenes"); } catch (error) { console.error("Error al cargar el sistema:", { message: errorLegible(error) }); mostrarLogin(); mostrarLoginMensaje(errorLegible(error)); } finally { autenticando = false; } }
+function abrirCrearUsuario() {
+  if (!esAdministrador()) throw new Error("Tu usuario no tiene permiso para realizar esta acción.");
+  $("#modal-titulo").textContent = "Crear usuario";
+  $("#modal-contenido").innerHTML = `
+    <form id="form-crear-usuario" class="user-create-form">
+      <div class="user-create-grid">
+        <label>Nombre completo<input id="usuario-nombre" name="nombre" autocomplete="name" required></label>
+        <label>Correo electrónico<input id="usuario-email" name="email" type="email" autocomplete="email" required></label>
+        <label>Contraseña<input id="usuario-password" name="password" type="password" autocomplete="new-password" required></label>
+        <label>Confirmar contraseña<input id="usuario-confirmar-password" name="confirmarPassword" type="password" autocomplete="new-password" required></label>
+        <label>Rol<select id="usuario-rol" name="rol" required><option value="Usuario" selected>Usuario</option><option value="Administrador">Administrador</option></select></label>
+      </div>
+      <p id="crear-usuario-error" class="form-error" aria-live="polite"></p>
+      <div class="modal-actions"><button class="secondary" type="button" data-modal-action="cancelar">Cancelar</button><button id="confirmar-crear-usuario" type="submit">Crear usuario</button></div>
+    </form>`;
+  modal.showModal();
+  $("#usuario-nombre").focus();
+}
+
+async function crearUsuario(evento) {
+  evento.preventDefault();
+  if (!esAdministrador()) { mostrarMensaje("No tienes permisos para crear usuarios.", "error"); modal.close(); return; }
+  const formulario = evento.target;
+  const boton = $("#confirmar-crear-usuario"), errorFormulario = $("#crear-usuario-error");
+  if (boton.disabled) return;
+  const datos = Object.fromEntries(new FormData(formulario));
+  const nombre = datos.nombre.trim(), email = datos.email.trim(), password = datos.password, rol = datos.rol;
+  errorFormulario.textContent = "";
+  errorFormulario.className = "form-error";
+  if (!nombre) { errorFormulario.textContent = "El nombre completo es obligatorio."; errorFormulario.classList.add("msg", "error"); return; }
+  if (!formulario.elements.email.validity.valid) { errorFormulario.textContent = "Introduce un correo electrónico válido."; errorFormulario.classList.add("msg", "error"); return; }
+  if (!password) { errorFormulario.textContent = "La contraseña es obligatoria."; errorFormulario.classList.add("msg", "error"); return; }
+  if (password !== datos.confirmarPassword) { errorFormulario.textContent = "Las contraseñas no coinciden."; errorFormulario.classList.add("msg", "error"); return; }
+  if (!["Administrador", "Usuario"].includes(rol)) { errorFormulario.textContent = "Selecciona un rol válido."; errorFormulario.classList.add("msg", "error"); return; }
+
+  boton.disabled = true;
+  boton.textContent = "Creando...";
+  try {
+    const { data: sesionData, error: sesionError } = await supabase.auth.getSession();
+    const token = sesionData.session?.access_token;
+    if (sesionError || !token) throw new Error("Debes iniciar sesión nuevamente.");
+    const respuesta = await fetch("/api/usuarios/crear", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ nombre, email, password, rol })
+    });
+    const resultado = await respuesta.json().catch(() => ({}));
+    if (!respuesta.ok) throw new Error(resultado.message || "No fue posible crear el usuario.");
+    formulario.reset();
+    modal.close();
+    mostrarMensaje("Usuario creado correctamente.");
+    await listarUsuarios();
+  } catch (error) {
+    errorFormulario.textContent = errorLegible(error);
+    errorFormulario.className = "form-error msg error";
+  } finally {
+    boton.disabled = false;
+    boton.textContent = "Crear usuario";
+  }
+}
+async function iniciarSistema() { if (autenticando) return; autenticando = true; try { const data = await rpc("seguridad_mi_perfil"); perfil = Array.isArray(data) ? data[0] : data; if (!perfil?.rol || !["Administrador","Usuario"].includes(perfil.rol)) throw new Error("No fue posible obtener un perfil válido."); $("#perfil-nombre").textContent = perfil.nombre || "Sin nombre"; $("#perfil-rol").textContent = perfil.rol; $("#nav-usuarios").hidden = !esAdministrador(); $("#crear-usuario").hidden = !esAdministrador(); $("#pantalla-login").hidden = true; $("#pantalla-cargando").hidden = true; $("#pantalla-sistema").hidden = false; if (!sistemaCargado) { await cargarCatalogos(); sistemaCargado = true; } await listarOrdenes(); mostrarSeccion("ordenes"); } catch (error) { console.error("Error al cargar el sistema:", { message: errorLegible(error) }); mostrarLogin(); mostrarLoginMensaje(errorLegible(error)); } finally { autenticando = false; } }
 
 $("#form").addEventListener("submit", async e => { e.preventDefault(); const textoGuardar = guardar.textContent; guardar.disabled = true; guardar.textContent = codOtEditando === null ? "Guardando..." : "Actualizando..."; try { const datos = construirPayload(); validar(datos); if (codOtEditando === null) { const data = await rpc("orden_trabajo_crear_normalizada", { p_datos: datos }); const codigo = typeof data === "object" ? data?.cod_ot : data; mostrarMensaje(`Orden de Trabajo #${codigo} creada correctamente. Estado: Pendiente`); limpiarFormulario(false); } else { const codigo = codOtEditando; await rpc("orden_trabajo_actualizar_normalizada", { p_cod_ot: codigo, p_datos: datos }); limpiarFormulario(false); mostrarMensaje(`Orden de Trabajo #${codigo} actualizada correctamente.`); } await listarOrdenes(); } catch (error) { mostrarMensaje(errorLegible(error), "error"); } finally { guardar.disabled = false; if (codOtEditando !== null) guardar.textContent = "Guardar cambios"; else if (guardar.textContent.endsWith("...")) guardar.textContent = textoGuardar; } });
 $("#lista").addEventListener("click", async e => { const boton = e.target.closest("button[data-action]"); if (!boton) return; boton.disabled = true; try { const { action, id } = boton.dataset; if (action === "ver") await verOt(id); if (action === "editar") { await editarOt(id); mostrarSeccion("nueva"); } if (action === "estado") cambiarEstado(id); if (action === "eliminar") { if (!esAdministrador()) throw new Error("Tu usuario no tiene permiso para realizar esta acción."); confirmarEliminar(id); } } catch (error) { mostrarMensaje(errorLegible(error), "error"); } finally { boton.disabled = false; } });
@@ -78,6 +138,8 @@ $("#cancelar-edicion").addEventListener("click", () => limpiarFormulario(true));
 $("#recargar").addEventListener("click", async () => { try { await listarOrdenes(); mostrarMensaje("Listado actualizado."); } catch (error) { mostrarMensaje(errorLegible(error), "error"); } });
 document.querySelector(".main-nav").addEventListener("click", async e => { const boton = e.target.closest("[data-section]"); if (!boton) return; const nombre = boton.dataset.section; mostrarSeccion(nombre); if (nombre === "ordenes") { boton.disabled = true; try { await listarOrdenes(); } catch (error) { mostrarMensaje(errorLegible(error), "error"); } finally { boton.disabled = false; } } if (nombre === "usuarios") { boton.disabled = true; try { await listarUsuarios(); } catch (error) { mostrarMensaje(errorLegible(error), "error"); } finally { boton.disabled = false; } } });
 $("#recargar-usuarios").addEventListener("click", async e => { e.currentTarget.disabled = true; try { await listarUsuarios(); mostrarMensaje("Listado de usuarios actualizado."); } catch (error) { mostrarMensaje(errorLegible(error), "error"); } finally { e.currentTarget.disabled = false; } });
+$("#crear-usuario").addEventListener("click", () => { try { abrirCrearUsuario(); } catch (error) { mostrarMensaje(errorLegible(error), "error"); } });
+$("#modal-contenido").addEventListener("submit", e => { if (e.target.id === "form-crear-usuario") crearUsuario(e); });
 $("#lista-usuarios").addEventListener("click", async e => { const boton = e.target.closest("button[data-cod-perfil]"); if (!boton) return; const select = boton.closest("tr").querySelector(".rol-select"), nuevoRol = select.value; if (nuevoRol === boton.dataset.currentRole) { mostrarMensaje("Selecciona un rol diferente.", "error"); return; } boton.disabled = true; boton.textContent = "Actualizando..."; try { await rpc("seguridad_usuario_cambiar_rol", { p_cod_perfil: boton.dataset.codPerfil, p_rol: nuevoRol }); mostrarMensaje("Usuario actualizado correctamente."); await listarUsuarios(); if (String(boton.dataset.codPerfil) === String(perfil.cod_perfil)) await iniciarSistema(); } catch (error) { mostrarMensaje(errorLegible(error), "error"); boton.disabled = false; boton.textContent = "Cambiar rol"; } });
 $("#login-form").addEventListener("submit", async e => { e.preventDefault(); const boton = $("#login-button"); boton.disabled = true; boton.textContent = "Iniciando..."; mostrarLoginMensaje(""); try { const { error } = await supabase.auth.signInWithPassword({ email: $("#login-email").value.trim(), password: $("#login-password").value }); if (error) { console.error("Error de inicio de sesión:", { message: error.message, status: error.status }); throw error; } mostrarLoginMensaje("Inicio de sesión correcto.", "ok"); await iniciarSistema(); } catch (error) { mostrarLoginMensaje("No fue posible iniciar sesión. " + errorLegible(error)); } finally { boton.disabled = false; boton.textContent = "Iniciar sesión"; } });
 $("#cerrar-sesion").addEventListener("click", async e => { const boton = e.currentTarget; boton.disabled = true; boton.textContent = "Cerrando..."; try { const { error } = await supabase.auth.signOut(); if (error) throw error; mostrarLogin(); mostrarLoginMensaje("Sesión cerrada correctamente.", "ok"); } catch (error) { mostrarMensaje(errorLegible(error), "error"); } finally { boton.disabled = false; boton.textContent = "Cerrar sesión"; } });
