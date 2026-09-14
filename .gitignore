@@ -12,6 +12,9 @@ coverage/
 # Vercel local project metadata
 .vercel/
 
+# Local-only development server (Vercel serves the site statically)
+server.mjs
+
 # Logs, caches, and temporary files
 *.log
 npm-debug.log*
@@ -31,4 +34,3 @@ temp/
 .DS_Store
 Thumbs.db
 Desktop.ini
-
