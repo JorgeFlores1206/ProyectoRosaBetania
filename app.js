@@ -87,6 +87,63 @@ function abrirCrearUsuario() {
   $("#usuario-nombre").focus();
 }
 
+function abrirCambiarPassword() {
+  if (!perfil) throw new Error("Debes iniciar sesión nuevamente.");
+  $("#modal-titulo").textContent = "Cambiar contraseña";
+  $("#modal-contenido").innerHTML = `
+    <form id="form-cambiar-password" class="user-create-form">
+      <label>Contraseña actual<input id="password-actual" name="passwordActual" type="password" autocomplete="current-password" required></label>
+      <label>Nueva contraseña<input id="password-nueva" name="passwordNueva" type="password" autocomplete="new-password" minlength="8" required><span class="help">Utiliza al menos 8 caracteres.</span></label>
+      <label>Confirmar nueva contraseña<input id="password-confirmar" name="passwordConfirmar" type="password" autocomplete="new-password" minlength="8" required></label>
+      <p id="cambiar-password-error" class="form-error" aria-live="polite"></p>
+      <div class="modal-actions"><button class="secondary" type="button" data-modal-action="cancelar">Cancelar</button><button id="confirmar-cambiar-password" type="submit">Cambiar contraseña</button></div>
+    </form>`;
+  modal.showModal();
+  $("#password-actual").focus();
+}
+
+function mensajeErrorPassword(error) {
+  if (error?.code === "same_password") return "La nueva contraseña debe ser diferente de la actual.";
+  if (error?.code === "weak_password") return "La nueva contraseña no cumple los requisitos de seguridad.";
+  if (["invalid_credentials", "reauthentication_not_valid"].includes(error?.code)) return "La contraseña actual es incorrecta.";
+  if (error?.code === "reauthentication_needed") return "Supabase requiere verificar nuevamente tu identidad antes de cambiar la contraseña.";
+  return "No fue posible actualizar la contraseña. Verifica la contraseña actual e inténtalo nuevamente.";
+}
+
+async function cambiarPassword(evento) {
+  evento.preventDefault();
+  const formulario = evento.target;
+  const boton = $("#confirmar-cambiar-password"), errorFormulario = $("#cambiar-password-error");
+  if (boton.disabled) return;
+  const datos = Object.fromEntries(new FormData(formulario));
+  errorFormulario.textContent = "";
+  errorFormulario.className = "form-error";
+  if (!datos.passwordActual || !datos.passwordNueva || !datos.passwordConfirmar) { errorFormulario.textContent = "Todos los campos son obligatorios."; errorFormulario.classList.add("msg", "error"); return; }
+  if (datos.passwordNueva.length < 8) { errorFormulario.textContent = "La nueva contraseña debe tener al menos 8 caracteres."; errorFormulario.classList.add("msg", "error"); return; }
+  if (datos.passwordNueva !== datos.passwordConfirmar) { errorFormulario.textContent = "Las nuevas contraseñas no coinciden."; errorFormulario.classList.add("msg", "error"); return; }
+
+  boton.disabled = true;
+  boton.textContent = "Actualizando...";
+  try {
+    const { data: usuarioData, error: usuarioError } = await supabase.auth.getUser();
+    const email = usuarioData.user?.email;
+    if (usuarioError || !email) throw new Error("No fue posible verificar la sesión actual.");
+    const { error: reautenticacionError } = await supabase.auth.signInWithPassword({ email, password: datos.passwordActual });
+    if (reautenticacionError) throw Object.assign(new Error("No fue posible reautenticar al usuario."), { code: reautenticacionError.code || "invalid_credentials" });
+    const { error } = await supabase.auth.updateUser({ password: datos.passwordNueva, current_password: datos.passwordActual });
+    if (error) throw error;
+    formulario.reset();
+    modal.close();
+    mostrarMensaje("Contraseña actualizada correctamente.");
+  } catch (error) {
+    errorFormulario.textContent = mensajeErrorPassword(error);
+    errorFormulario.className = "form-error msg error";
+  } finally {
+    boton.disabled = false;
+    boton.textContent = "Cambiar contraseña";
+  }
+}
+
 async function crearUsuario(evento) {
   evento.preventDefault();
   if (!esAdministrador()) { mostrarMensaje("No tienes permisos para crear usuarios.", "error"); modal.close(); return; }
@@ -139,7 +196,8 @@ $("#recargar").addEventListener("click", async () => { try { await listarOrdenes
 document.querySelector(".main-nav").addEventListener("click", async e => { const boton = e.target.closest("[data-section]"); if (!boton) return; const nombre = boton.dataset.section; mostrarSeccion(nombre); if (nombre === "ordenes") { boton.disabled = true; try { await listarOrdenes(); } catch (error) { mostrarMensaje(errorLegible(error), "error"); } finally { boton.disabled = false; } } if (nombre === "usuarios") { boton.disabled = true; try { await listarUsuarios(); } catch (error) { mostrarMensaje(errorLegible(error), "error"); } finally { boton.disabled = false; } } });
 $("#recargar-usuarios").addEventListener("click", async e => { e.currentTarget.disabled = true; try { await listarUsuarios(); mostrarMensaje("Listado de usuarios actualizado."); } catch (error) { mostrarMensaje(errorLegible(error), "error"); } finally { e.currentTarget.disabled = false; } });
 $("#crear-usuario").addEventListener("click", () => { try { abrirCrearUsuario(); } catch (error) { mostrarMensaje(errorLegible(error), "error"); } });
-$("#modal-contenido").addEventListener("submit", e => { if (e.target.id === "form-crear-usuario") crearUsuario(e); });
+$("#cambiar-password").addEventListener("click", () => { try { abrirCambiarPassword(); } catch (error) { mostrarMensaje(errorLegible(error), "error"); } });
+$("#modal-contenido").addEventListener("submit", e => { if (e.target.id === "form-crear-usuario") crearUsuario(e); if (e.target.id === "form-cambiar-password") cambiarPassword(e); });
 $("#lista-usuarios").addEventListener("click", async e => { const boton = e.target.closest("button[data-cod-perfil]"); if (!boton) return; const select = boton.closest("tr").querySelector(".rol-select"), nuevoRol = select.value; if (nuevoRol === boton.dataset.currentRole) { mostrarMensaje("Selecciona un rol diferente.", "error"); return; } boton.disabled = true; boton.textContent = "Actualizando..."; try { await rpc("seguridad_usuario_cambiar_rol", { p_cod_perfil: boton.dataset.codPerfil, p_rol: nuevoRol }); mostrarMensaje("Usuario actualizado correctamente."); await listarUsuarios(); if (String(boton.dataset.codPerfil) === String(perfil.cod_perfil)) await iniciarSistema(); } catch (error) { mostrarMensaje(errorLegible(error), "error"); boton.disabled = false; boton.textContent = "Cambiar rol"; } });
 $("#login-form").addEventListener("submit", async e => { e.preventDefault(); const boton = $("#login-button"); boton.disabled = true; boton.textContent = "Iniciando..."; mostrarLoginMensaje(""); try { const { error } = await supabase.auth.signInWithPassword({ email: $("#login-email").value.trim(), password: $("#login-password").value }); if (error) { console.error("Error de inicio de sesión:", { message: error.message, status: error.status }); throw error; } mostrarLoginMensaje("Inicio de sesión correcto.", "ok"); await iniciarSistema(); } catch (error) { mostrarLoginMensaje("No fue posible iniciar sesión. " + errorLegible(error)); } finally { boton.disabled = false; boton.textContent = "Iniciar sesión"; } });
 $("#cerrar-sesion").addEventListener("click", async e => { const boton = e.currentTarget; boton.disabled = true; boton.textContent = "Cerrando..."; try { const { error } = await supabase.auth.signOut(); if (error) throw error; mostrarLogin(); mostrarLoginMensaje("Sesión cerrada correctamente.", "ok"); } catch (error) { mostrarMensaje(errorLegible(error), "error"); } finally { boton.disabled = false; boton.textContent = "Cerrar sesión"; } });
