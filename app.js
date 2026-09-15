@@ -5,6 +5,7 @@ const $ = s => document.querySelector(s);
 const CARAS = ["Anverso", "Reverso", "Anverso y reverso"];
 const conexion = $("#conexion"), mensaje = $("#mensaje"), guardar = $("#guardar"), modal = $("#modal");
 let catalogos = null, codOtEditando = null, ordenes = [], perfil = null, sistemaCargado = false, autenticando = false;
+let modoRecuperacion = false, correoRecuperacion = "", temporizadorReenvio = null;
 if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY || SUPABASE_URL.includes("PEGA_AQUI") || SUPABASE_PUBLISHABLE_KEY.includes("PEGA_AQUI")) throw new Error("Completa config.js");
 const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 
@@ -14,7 +15,15 @@ function mostrarMensaje(texto, tipo = "ok") { mensaje.textContent = texto; mensa
 function mostrarLoginMensaje(texto, tipo = "error") { const box = $("#login-mensaje"); box.textContent = texto; box.className = texto ? `msg ${tipo}` : ""; }
 const esAdministrador = () => perfil?.rol === "Administrador";
 function limpiarEstadoSensible() { perfil = null; catalogos = null; ordenes = []; sistemaCargado = false; codOtEditando = null; $("#lista").innerHTML = ""; $("#lista-usuarios").innerHTML = ""; mensaje.textContent = ""; if (modal.open) modal.close(); }
-function mostrarLogin() { limpiarEstadoSensible(); $("#pantalla-cargando").hidden = true; $("#pantalla-sistema").hidden = true; $("#pantalla-login").hidden = false; $("#login-password").value = ""; }
+function detenerTemporizadorReenvio() { if (temporizadorReenvio) clearInterval(temporizadorReenvio); temporizadorReenvio = null; }
+function mostrarVistaAuth(id) { ["login-form","recuperar-form","verificar-form","nueva-password-form"].forEach(formId => { $(`#${formId}`).hidden = formId !== id; }); $("#pantalla-cargando").hidden = true; $("#pantalla-sistema").hidden = true; $("#pantalla-login").hidden = false; }
+function limpiarRecuperacion() { detenerTemporizadorReenvio(); correoRecuperacion = ""; ["#recuperar-email","#codigo-recuperacion","#recuperacion-password","#recuperacion-confirmar"].forEach(id => { $(id).value = ""; }); $("#mostrar-password-recuperacion").checked = false; $("#recuperacion-password").type = "password"; $("#recuperacion-confirmar").type = "password"; ["#recuperar-mensaje","#verificar-mensaje","#nueva-password-mensaje"].forEach(id => { $(id).textContent = ""; $(id).className = ""; }); }
+function mostrarLogin() { modoRecuperacion = false; limpiarRecuperacion(); limpiarEstadoSensible(); mostrarVistaAuth("login-form"); $("#login-password").value = ""; }
+function mostrarMensajeAuth(selector, texto, tipo = "error") { const box = $(selector); box.textContent = texto; box.className = texto ? `msg ${tipo}` : ""; }
+function enmascararCorreo(email) { const [usuario, dominio] = email.split("@"); if (!dominio) return "***"; const visibles = usuario.slice(0, Math.min(2, usuario.length)); return `${visibles}${"*".repeat(Math.max(3, usuario.length - visibles.length))}@${dominio}`; }
+function iniciarTemporizadorReenvio(segundos = 45) { detenerTemporizadorReenvio(); const boton = $("#reenviar-codigo"); let restante = segundos; boton.disabled = true; boton.textContent = `Reenviar código en ${restante} s`; temporizadorReenvio = setInterval(() => { restante -= 1; if (restante <= 0) { detenerTemporizadorReenvio(); boton.disabled = false; boton.textContent = "Reenviar código"; return; } boton.textContent = `Reenviar código en ${restante} s`; }, 1000); }
+function abrirRecuperacion() { modoRecuperacion = true; correoRecuperacion = ""; mostrarLoginMensaje(""); $("#recuperar-email").value = $("#login-email").value.trim(); mostrarVistaAuth("recuperar-form"); $("#recuperar-email").focus(); }
+async function cancelarRecuperacion() { try { const { data } = await supabase.auth.getSession(); if (data.session) await supabase.auth.signOut({ scope: "local" }); } finally { mostrarLogin(); } }
 function mostrarSeccion(nombre) { if (nombre === "usuarios" && !esAdministrador()) nombre = "ordenes"; document.querySelectorAll(".app-section").forEach(x => x.hidden = x.id !== `seccion-${nombre}`); document.querySelectorAll("[data-section]").forEach(x => x.classList.toggle("active", x.dataset.section === nombre)); }
 function opcion(valor, texto) { const o = document.createElement("option"); o.value = valor; o.textContent = texto; return o; }
 function selector(filas, clave, etiqueta, clase = "") { const s = document.createElement("select"); s.className = clase; s.append(opcion("", "Seleccionar...")); for (const fila of filas ?? []) s.append(opcion(fila[clave], etiqueta(fila))); return s; }
@@ -144,6 +153,101 @@ async function cambiarPassword(evento) {
   }
 }
 
+async function enviarCodigoRecuperacion(evento) {
+  evento.preventDefault();
+  const boton = $("#enviar-codigo"), emailInput = $("#recuperar-email");
+  const email = emailInput.value.trim().toLowerCase();
+  mostrarMensajeAuth("#recuperar-mensaje", "");
+  if (!emailInput.validity.valid || !email) { mostrarMensajeAuth("#recuperar-mensaje", "Introduce un correo electrónico válido."); return; }
+  if (boton.disabled) return;
+  boton.disabled = true;
+  boton.textContent = "Enviando código...";
+  try {
+    const { error } = await supabase.auth.resetPasswordForEmail(email);
+    if (error) throw error;
+    correoRecuperacion = email;
+    $("#correo-enmascarado").textContent = enmascararCorreo(email);
+    mostrarVistaAuth("verificar-form");
+    mostrarMensajeAuth("#verificar-mensaje", "Si existe una cuenta asociada a este correo, recibirás un código de recuperación.", "ok");
+    iniciarTemporizadorReenvio();
+    $("#codigo-recuperacion").focus();
+  } catch {
+    mostrarMensajeAuth("#recuperar-mensaje", "No fue posible procesar la solicitud. Inténtalo nuevamente en unos minutos.");
+  } finally {
+    boton.disabled = false;
+    boton.textContent = "Enviar código";
+  }
+}
+
+async function reenviarCodigoRecuperacion() {
+  const boton = $("#reenviar-codigo");
+  if (boton.disabled || !correoRecuperacion) return;
+  boton.disabled = true;
+  boton.textContent = "Enviando código...";
+  mostrarMensajeAuth("#verificar-mensaje", "");
+  try {
+    const { error } = await supabase.auth.resetPasswordForEmail(correoRecuperacion);
+    if (error) throw error;
+    mostrarMensajeAuth("#verificar-mensaje", "Si existe una cuenta asociada a este correo, recibirás un código de recuperación.", "ok");
+  } catch {
+    mostrarMensajeAuth("#verificar-mensaje", "No fue posible reenviar el código. Inténtalo nuevamente más tarde.");
+  } finally {
+    iniciarTemporizadorReenvio();
+  }
+}
+
+async function verificarCodigoRecuperacion(evento) {
+  evento.preventDefault();
+  const boton = $("#verificar-codigo"), input = $("#codigo-recuperacion");
+  const codigo = input.value.trim();
+  mostrarMensajeAuth("#verificar-mensaje", "");
+  if (!codigo || !/^[A-Za-z0-9]+$/.test(codigo)) { mostrarMensajeAuth("#verificar-mensaje", "Introduce un código de verificación válido."); return; }
+  if (boton.disabled || !correoRecuperacion) return;
+  boton.disabled = true;
+  boton.textContent = "Verificando...";
+  try {
+    const { data, error } = await supabase.auth.verifyOtp({ email: correoRecuperacion, token: codigo, type: "recovery" });
+    if (error || !data.session) throw error || new Error("No se recibió una sesión de recuperación.");
+    input.value = "";
+    detenerTemporizadorReenvio();
+    mostrarVistaAuth("nueva-password-form");
+    $("#recuperacion-password").focus();
+  } catch {
+    input.select();
+    mostrarMensajeAuth("#verificar-mensaje", "El código ingresado es incorrecto o ha expirado.");
+  } finally {
+    boton.disabled = false;
+    boton.textContent = "Verificar código";
+  }
+}
+
+async function guardarPasswordRecuperacion(evento) {
+  evento.preventDefault();
+  const boton = $("#guardar-password-recuperacion"), nuevaPassword = $("#recuperacion-password").value, confirmacion = $("#recuperacion-confirmar").value;
+  mostrarMensajeAuth("#nueva-password-mensaje", "");
+  if (!nuevaPassword || !confirmacion) { mostrarMensajeAuth("#nueva-password-mensaje", "Todos los campos son obligatorios."); return; }
+  if (nuevaPassword !== nuevaPassword.trim()) { mostrarMensajeAuth("#nueva-password-mensaje", "La contraseña no debe comenzar ni terminar con espacios."); return; }
+  if (nuevaPassword.length < 8) { mostrarMensajeAuth("#nueva-password-mensaje", "La contraseña debe tener al menos 8 caracteres."); return; }
+  if (nuevaPassword !== confirmacion) { mostrarMensajeAuth("#nueva-password-mensaje", "Las contraseñas no coinciden."); return; }
+  if (boton.disabled) return;
+  boton.disabled = true;
+  boton.textContent = "Actualizando contraseña...";
+  try {
+    const { error } = await supabase.auth.updateUser({ password: nuevaPassword });
+    if (error) throw error;
+    $("#recuperacion-password").value = "";
+    $("#recuperacion-confirmar").value = "";
+    await supabase.auth.signOut({ scope: "local" });
+    mostrarLogin();
+    mostrarLoginMensaje("Tu contraseña fue actualizada correctamente. Inicia sesión con tu nueva contraseña.", "ok");
+  } catch {
+    mostrarMensajeAuth("#nueva-password-mensaje", "No fue posible actualizar la contraseña. Verifica los datos e inténtalo nuevamente.");
+  } finally {
+    boton.disabled = false;
+    boton.textContent = "Guardar nueva contraseña";
+  }
+}
+
 async function crearUsuario(evento) {
   evento.preventDefault();
   if (!esAdministrador()) { mostrarMensaje("No tienes permisos para crear usuarios.", "error"); modal.close(); return; }
@@ -199,9 +303,18 @@ $("#crear-usuario").addEventListener("click", () => { try { abrirCrearUsuario();
 $("#cambiar-password").addEventListener("click", () => { try { abrirCambiarPassword(); } catch (error) { mostrarMensaje(errorLegible(error), "error"); } });
 $("#modal-contenido").addEventListener("submit", e => { if (e.target.id === "form-crear-usuario") crearUsuario(e); if (e.target.id === "form-cambiar-password") cambiarPassword(e); });
 $("#lista-usuarios").addEventListener("click", async e => { const boton = e.target.closest("button[data-cod-perfil]"); if (!boton) return; const select = boton.closest("tr").querySelector(".rol-select"), nuevoRol = select.value; if (nuevoRol === boton.dataset.currentRole) { mostrarMensaje("Selecciona un rol diferente.", "error"); return; } boton.disabled = true; boton.textContent = "Actualizando..."; try { await rpc("seguridad_usuario_cambiar_rol", { p_cod_perfil: boton.dataset.codPerfil, p_rol: nuevoRol }); mostrarMensaje("Usuario actualizado correctamente."); await listarUsuarios(); if (String(boton.dataset.codPerfil) === String(perfil.cod_perfil)) await iniciarSistema(); } catch (error) { mostrarMensaje(errorLegible(error), "error"); boton.disabled = false; boton.textContent = "Cambiar rol"; } });
+$("#abrir-recuperacion").addEventListener("click", abrirRecuperacion);
+$("#recuperar-form").addEventListener("submit", enviarCodigoRecuperacion);
+$("#verificar-form").addEventListener("submit", verificarCodigoRecuperacion);
+$("#nueva-password-form").addEventListener("submit", guardarPasswordRecuperacion);
+$("#reenviar-codigo").addEventListener("click", reenviarCodigoRecuperacion);
+$("#volver-recuperacion").addEventListener("click", () => { detenerTemporizadorReenvio(); $("#codigo-recuperacion").value = ""; $("#recuperar-email").value = correoRecuperacion; mostrarVistaAuth("recuperar-form"); });
+document.querySelectorAll(".volver-login").forEach(boton => boton.addEventListener("click", () => cancelarRecuperacion()));
+$("#codigo-recuperacion").addEventListener("input", e => { e.target.value = e.target.value.replace(/[^A-Za-z0-9]/g, ""); });
+$("#mostrar-password-recuperacion").addEventListener("change", e => { const tipo = e.target.checked ? "text" : "password"; $("#recuperacion-password").type = tipo; $("#recuperacion-confirmar").type = tipo; });
 $("#login-form").addEventListener("submit", async e => { e.preventDefault(); const boton = $("#login-button"); boton.disabled = true; boton.textContent = "Iniciando..."; mostrarLoginMensaje(""); try { const { error } = await supabase.auth.signInWithPassword({ email: $("#login-email").value.trim(), password: $("#login-password").value }); if (error) { console.error("Error de inicio de sesión:", { message: error.message, status: error.status }); throw error; } mostrarLoginMensaje("Inicio de sesión correcto.", "ok"); await iniciarSistema(); } catch (error) { mostrarLoginMensaje("No fue posible iniciar sesión. " + errorLegible(error)); } finally { boton.disabled = false; boton.textContent = "Iniciar sesión"; } });
 $("#cerrar-sesion").addEventListener("click", async e => { const boton = e.currentTarget; boton.disabled = true; boton.textContent = "Cerrando..."; try { const { error } = await supabase.auth.signOut(); if (error) throw error; mostrarLogin(); mostrarLoginMensaje("Sesión cerrada correctamente.", "ok"); } catch (error) { mostrarMensaje(errorLegible(error), "error"); } finally { boton.disabled = false; boton.textContent = "Cerrar sesión"; } });
 
 fechaActual();
-supabase.auth.onAuthStateChange((event, session) => { if (event === "SIGNED_OUT" || !session) mostrarLogin(); else if ((event === "SIGNED_IN" || event === "TOKEN_REFRESHED") && !perfil && !autenticando) setTimeout(() => iniciarSistema(), 0); });
+supabase.auth.onAuthStateChange((event, session) => { if (modoRecuperacion) return; if (event === "SIGNED_OUT" || !session) mostrarLogin(); else if ((event === "SIGNED_IN" || event === "TOKEN_REFRESHED") && !perfil && !autenticando) setTimeout(() => iniciarSistema(), 0); });
 try { const { data, error } = await supabase.auth.getSession(); if (error) throw error; if (data.session) await iniciarSistema(); else mostrarLogin(); } catch (error) { console.error("Error al recuperar la sesión:", { message: errorLegible(error) }); mostrarLogin(); mostrarLoginMensaje("No fue posible recuperar la sesión."); }
