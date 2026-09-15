@@ -14,24 +14,7 @@
         <div class="brand-mark">RB</div><h1>Sistema de Órdenes de Trabajo</h1><p>Rosa Betania SRL</p>
         <label>Correo electrónico<input id="login-email" type="email" autocomplete="username" required></label>
         <label>Contraseña<input id="login-password" type="password" autocomplete="current-password" required></label>
-        <button id="login-button" type="submit">Iniciar sesión</button><button id="abrir-recuperacion" class="link-button" type="button">¿Olvidaste tu contraseña?</button><div id="login-mensaje" aria-live="polite"></div>
-      </form>
-      <form id="recuperar-form" class="login-card" hidden>
-        <div class="brand-mark">RB</div><h1>Recuperar contraseña</h1><p>Te enviaremos un código de recuperación.</p>
-        <label>Correo electrónico<input id="recuperar-email" type="email" autocomplete="email" required></label>
-        <button id="enviar-codigo" type="submit">Enviar código</button><button class="secondary volver-login" type="button">Volver al login</button><div id="recuperar-mensaje" aria-live="polite"></div>
-      </form>
-      <form id="verificar-form" class="login-card" hidden>
-        <div class="brand-mark">RB</div><h1>Verificar identidad</h1><p>Hemos enviado un código a <strong id="correo-enmascarado"></strong></p>
-        <label>Código de verificación<input id="codigo-recuperacion" class="otp-input" type="text" inputmode="numeric" autocomplete="one-time-code" autocapitalize="off" spellcheck="false" required></label>
-        <button id="verificar-codigo" type="submit">Verificar código</button><button id="reenviar-codigo" class="secondary" type="button" disabled>Reenviar código en 45 s</button><button id="volver-recuperacion" class="link-button" type="button">Volver</button><div id="verificar-mensaje" aria-live="polite"></div>
-      </form>
-      <form id="nueva-password-form" class="login-card" hidden>
-        <div class="brand-mark">RB</div><h1>Crear nueva contraseña</h1><p>El código fue verificado correctamente.</p>
-        <label>Nueva contraseña<input id="recuperacion-password" type="password" autocomplete="new-password" minlength="8" required></label>
-        <label>Confirmar contraseña<input id="recuperacion-confirmar" type="password" autocomplete="new-password" minlength="8" required></label>
-        <label class="show-password"><input id="mostrar-password-recuperacion" type="checkbox"> Mostrar contraseñas</label>
-        <button id="guardar-password-recuperacion" type="submit">Guardar nueva contraseña</button><button class="secondary volver-login" type="button">Cancelar</button><div id="nueva-password-mensaje" aria-live="polite"></div>
+        <button id="login-button" type="submit">Iniciar sesión</button><div id="login-mensaje" aria-live="polite"></div>
       </form>
     </section>
     <section id="pantalla-sistema" hidden>
